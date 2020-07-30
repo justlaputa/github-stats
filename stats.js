@@ -1,26 +1,30 @@
 const {Octokit} = require('@octokit/core')
+const config = require('./config')
 
-const REPOS = reposString.split(',')
-    .map(r => r.trim())
-    .filter(r => r.length > 0)
-
-const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN })
+const octokit = new Octokit({ auth: config.token })
 
 async function getStats() {
-    const pullsArray = await Promise.all(REPOS.map(repo => getPullsForRepo(repo)))
+    const repos = config.repos.map(r => ({
+        owner: r.split('/')[0],
+        name: r.split('/')[1],
+    }));
+
+    const pullsArray = await Promise.all(repos.map(r => getPullsForRepo(r.owner, r.name)))
 
     const pulls = pullsArray.flat()
 
+    const repoNames = repos.map(r => r.name);
+
     const repoStats = analyzeRepos(pulls)
-    const reviewerStats = analyzeReviewers(pulls)
+    const reviewerStats = analyzeReviewers(repoNames, pulls)
 
     return [repoStats, reviewerStats]
 }
 
-async function getPullsForRepo(org, repo) {
-    const response = await octokit.request('GET /repos/{org}/{repo}/pulls', {
-        org: org,
-        repo: repo,
+async function getPullsForRepo(owner, repo) {
+    const response = await octokit.request('GET /repos/{owner}/{repo}/pulls', {
+        owner,
+        repo,
     })
 
     return response.data.map(pull => ({
@@ -58,19 +62,7 @@ function analyzeRepos(pulls) {
     return repoMap
 }
 
-function printRepoStats(repoStat) {
-    const header = [' ', 'has reviewers', 'no reviewers', 'total']
-    console.log(header.join('\t'))
-
-    for (let repo of REPOS) {
-        if (!repoStat.has(repo)) continue
-
-        const stat = repoStat.get(repo)
-        console.log([repo, stat.hasReviewers, stat.noReviewers, stat.count].join('\t'))
-    }
-}
-
-function analyzeReviewers(pulls) {
+function analyzeReviewers(repos, pulls) {
     const reviewerMap = new Map()
     for (let pull of pulls) {
         for (let reviewer of pull.reviewers) {
@@ -78,7 +70,7 @@ function analyzeReviewers(pulls) {
                 reviewerMap.set(reviewer, {total: 0})
             }
 
-            reviewerStat = reviewerMap.get(reviewer)
+            let reviewerStat = reviewerMap.get(reviewer)
             if (!reviewerStat[pull.repo]) {
                 reviewerStat[pull.repo] = 0
             }
@@ -87,42 +79,24 @@ function analyzeReviewers(pulls) {
         }
     }
 
+    for (let [reviewer, stat] of reviewerMap) {
+        repos.forEach(repo => {
+            if (!stat[repo]) {
+                stat[repo] = 0;
+            }
+        })
+    }
+
     return reviewerMap
 }
 
-function printReviewerStats(reviewerStats) {
-    const header = [' ', ...REPOS, 'total']
-    console.log(header.join('\t'))
-
-    for (let [reviewer, stat] of reviewerStats) {
-        const line = [reviewer]
-        for (let repo of REPOS) {
-            if (stat[repo]) {
-                line.push(stat[repo])
-            } else {
-                line.push(0)
-            }
-        }
-        line.push(stat.total)
-
-        console.log(line.join('\t'))
-    }
+module.exports = {
+    getStats,
 }
 
-function printPullsByUser(pulls, user) {
-    console.log('pull requests created by %s', user);
-    printPullsByFilter(pulls, pull => pull.user === user);
-}
-
-function printPullsByReviewer(pulls, user) {
-    console.log('pull requests review requested to %s', user);
-    printPullsByFilter(pulls, pull => pull.reviewers.includes(user));
-}
-
-function printPullsByFilter(pulls, func) {
-    const userPulls = pulls.filter(func);
-
-    userPulls.forEach(pull => {
-        console.log(`%s\t%s\t[%s]`, pull.repo, pull.url, pull.title);
-    });
+if (require.main === module) {
+    getStats().then(
+        console.log,
+        console.error
+    );
 }
