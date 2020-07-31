@@ -1,13 +1,13 @@
 IMAGENAME = gcr.io/laputa/github-stats
 
-ENVS = $(shell cat .env | tr '\n' ',')
+ENVS = $(shell cat .env | tr '\n' '#')
 
 .PHONY: build deploy
 
 build:
 	gcloud builds submit --project laputa --tag $(IMAGENAME)
 
-deploy: build
+deploy:
 	gcloud beta run \
 		deploy github-stats \
 		--region us-central1 \
@@ -16,6 +16,6 @@ deploy: build
 		--max-instances 1 \
 		--memory 256Mi \
 		--timeout 1m \
-		--set-env-vars $(ENVS) \
+		--set-env-vars=^#^$(ENVS) \
 		--image $(IMAGENAME) \
 		--project laputa
