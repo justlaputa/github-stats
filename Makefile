@@ -7,7 +7,7 @@ ENVS = $(shell cat .env | tr '\n' ',')
 build:
 	gcloud builds submit --project laputa --tag $(IMAGENAME)
 
-deploy:
+deploy: build
 	gcloud beta run \
 		deploy github-stats \
 		--region us-central1 \
